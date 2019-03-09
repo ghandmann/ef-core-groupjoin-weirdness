@@ -292,7 +292,7 @@ namespace GroupJoinTest
                 }
             }
 
-            //[Fact]
+            [Fact]
             public void TwoUserWithDifferentRoles_SQLite () {
                 var sqlite = new SqliteConnection("DataSource=:memory:");
                 sqlite.Open();
@@ -333,36 +333,31 @@ namespace GroupJoinTest
             }
 
             public List<Role> GetRolesByUser (DemoContext context, int UserId) {
-                var join = context.UserRoles.AsNoTracking().Where (ur => ur.UserId == UserId);
-
-                var joinResult = join.ToList();
-                var roleResult = context.Roles.ToList();
-
-                var inMemoryGroupJoin = roleResult.GroupJoin(joinResult, outer => outer.Id, inner => inner.RoleId, (outer, inner) => new { Role = outer, Users = inner });
-                var inMemoryResult = new List<Role>();
-
-                foreach(var entry in inMemoryGroupJoin) {
-                    var role = entry.Role;
-                    role.UserRoles = entry.Users.ToList();
-
-                    inMemoryResult.Add(role);
-                }
-
-                // Preferred way, but breaks the join-condition when EF Core decides to run two seperate queries (one for all UserRoles, one for all Roles)
+                // Query the database
                 var preferredQuery = context.Roles.GroupJoin (
-                    context.UserRoles,
-                    outer => outer.Id,
-                    inner => inner.RoleId,
-                    (role, inner) => role
-                    ).SelectMany(
+                        context.UserRoles,
+                        outer => outer.Id,
+                        inner => inner.RoleId,
+                        (role, inner) => role
+                    )
+                    .SelectMany(
                         collectionSelector: role => role.UserRoles.Where(ur => ur.UserId == UserId).DefaultIfEmpty(),
-                        resultSelector: (role, UserRoles) => role
+                        resultSelector: (role, userRole) => new { Role = role, UserRole = userRole }
                     );
 
+                // Build the right result structure.
+                // I havent found way on how to populate the navigational property in any other way...
+                var result = new List<Role>();
+                foreach(var entry in preferredQuery.ToList ()) {
+                    var role = entry.Role;
+                    role.UserRoles = new List<UserRoles>();
+                    if(entry.UserRole != null) {
+                        role.UserRoles.Add(entry.UserRole);
+                    }
+                    result.Add(role);
+                }
 
-                var preferredResult = preferredQuery.ToList ();
-
-                return preferredResult;
+                return result;
             }
             // Helpers to create the needed contexts
             public DemoContext GetInMemoryContext(string databaseName = null) {
