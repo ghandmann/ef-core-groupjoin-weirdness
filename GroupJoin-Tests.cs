@@ -96,12 +96,8 @@ namespace GroupJoinTest
             }
 
             [Fact]
-            public void TwoUserWithDifferentRoles_SQLite () {
-                var sqlite = new SqliteConnection("DataSource=:memory:");
-                sqlite.Open();
-
-                using(var writeContext = GetInMemorySqliteContext(sqlite)) {
-                    writeContext.Database.EnsureCreated();
+            public void TwoUserWithDifferentRoles () {
+                using(var writeContext = GetInMemoryContext(nameof(TwoUserWithDifferentRoles))) {
 
                     InsertUsers(writeContext);
                     InsertRoles(writeContext);
@@ -112,43 +108,7 @@ namespace GroupJoinTest
                     writeContext.SaveChanges ();
                 }
 
-                using(var readContext = GetInMemorySqliteContext(sqlite)) {
-                    var result = GetRolesByUser (readContext, 1);
-
-                    // In total we expect 4 roles
-                    Assert.Equal (2, result.Count);
-
-                    foreach (var role in result) {
-                        // The navigational property must be set
-                        Assert.NotNull (role.UserRoles);
-
-                        if (role.Id == 1) {
-                            // For the role with ID 1 we should get back one UserRoles result
-                            Assert.Single (role.UserRoles);
-                        } else {
-                            // All other roles should return empty UserRoles "join" results
-                            Assert.Empty (role.UserRoles);
-                        }
-                    }
-                }
-
-                sqlite.Close();
-            }
-
-            [Fact]
-            public void TwoUserWithDifferentRoles_InMemory () {
-                using(var writeContext = GetInMemoryContext(nameof(TwoUserWithDifferentRoles_InMemory))) {
-
-                    InsertUsers(writeContext);
-                    InsertRoles(writeContext);
-
-                    writeContext.UserRoles.Add (new UserRoles () { UserId = 1, RoleId = 1 });
-                    writeContext.UserRoles.Add (new UserRoles () { UserId = 2, RoleId = 2 });
-
-                    writeContext.SaveChanges ();
-                }
-
-                using(var readContext = GetInMemoryContext(nameof(TwoUserWithDifferentRoles_InMemory))) {
+                using(var readContext = GetInMemoryContext(nameof(TwoUserWithDifferentRoles))) {
                     var result = GetRolesByUser (readContext, 1);
 
                     // In total we expect 4 roles
@@ -170,6 +130,122 @@ namespace GroupJoinTest
             }
 
             [Fact]
+            public void TwoUserWithSameRoles () {
+                using(var writeContext = GetInMemoryContext(nameof(TwoUserWithSameRoles))) {
+
+                    InsertUsers(writeContext);
+                    InsertRoles(writeContext);
+
+                    writeContext.UserRoles.Add (new UserRoles () { UserId = 1, RoleId = 1 });
+                    writeContext.UserRoles.Add (new UserRoles () { UserId = 2, RoleId = 1 });
+
+                    writeContext.SaveChanges ();
+                }
+
+                using(var readContext = GetInMemoryContext(nameof(TwoUserWithSameRoles))) {
+                    var result = GetRolesByUser (readContext, 1);
+
+                    // In total we expect 4 roles
+                    Assert.Equal (2, result.Count);
+
+                    foreach (var role in result) {
+                        // The navigational property must be set
+                        Assert.NotNull (role.UserRoles);
+
+                        if (role.Id == 1) {
+                            // For the role with ID 1 we should get back one UserRoles result
+                            Assert.Single (role.UserRoles);
+                        } else {
+                            // All other roles should return empty UserRoles "join" results
+                            Assert.Empty (role.UserRoles);
+                        }
+                    }
+                }
+            }
+
+            [Fact]
+            public void TwoUsersWithAllRolesEach () {
+                using(var writeContext = GetInMemoryContext(nameof(TwoUsersWithAllRolesEach))) {
+
+                    InsertUsers(writeContext);
+                    InsertRoles(writeContext);
+
+                    writeContext.UserRoles.Add (new UserRoles () { UserId = 1, RoleId = 1 });
+                    writeContext.UserRoles.Add (new UserRoles () { UserId = 1, RoleId = 2 });
+                    writeContext.UserRoles.Add (new UserRoles () { UserId = 2, RoleId = 1 });
+                    writeContext.UserRoles.Add (new UserRoles () { UserId = 2, RoleId = 2 });
+
+                    writeContext.SaveChanges ();
+                }
+
+                using(var readContext = GetInMemoryContext(nameof(TwoUsersWithAllRolesEach))) {
+                    var result = GetRolesByUser (readContext, 1);
+
+                    // In total we expect 4 roles
+                    Assert.Equal (2, result.Count);
+
+                    foreach (var role in result) {
+                        // The navigational property must be set
+                        Assert.NotNull (role.UserRoles);
+                        Assert.Single (role.UserRoles);
+                    }
+                }
+            }
+
+            [Fact]
+            public void TestUserWithoutRolesOtherUserWithAllRoles () {
+                using(var writeContext = GetInMemoryContext(nameof(TestUserWithoutRolesOtherUserWithAllRoles))) {
+
+                    InsertUsers(writeContext);
+                    InsertRoles(writeContext);
+
+                    writeContext.UserRoles.Add (new UserRoles () { UserId = 2, RoleId = 1 });
+                    writeContext.UserRoles.Add (new UserRoles () { UserId = 2, RoleId = 2 });
+
+                    writeContext.SaveChanges ();
+                }
+
+                using(var readContext = GetInMemoryContext(nameof(TestUserWithoutRolesOtherUserWithAllRoles))) {
+                    var result = GetRolesByUser (readContext, 1);
+
+                    // In total we expect 4 roles
+                    Assert.Equal (2, result.Count);
+
+                    foreach (var role in result) {
+                        // The navigational property must be set
+                        Assert.NotNull (role.UserRoles);
+                        Assert.Empty (role.UserRoles);
+                    }
+                }
+            }
+
+            [Fact]
+            public void TestUserWithoutRolesOtherUserWithOneRole () {
+                using(var writeContext = GetInMemoryContext(nameof(TestUserWithoutRolesOtherUserWithOneRole))) {
+
+                    InsertUsers(writeContext);
+                    InsertRoles(writeContext);
+
+                    writeContext.UserRoles.Add (new UserRoles () { UserId = 2, RoleId = 1 });
+
+                    writeContext.SaveChanges ();
+                }
+
+                using(var readContext = GetInMemoryContext(nameof(TestUserWithoutRolesOtherUserWithOneRole))) {
+                    var result = GetRolesByUser (readContext, 1);
+
+                    // In total we expect 4 roles
+                    Assert.Equal (2, result.Count);
+
+                    foreach (var role in result) {
+                        // The navigational property must be set
+                        Assert.NotNull (role.UserRoles);
+                        Assert.Empty (role.UserRoles);
+                    }
+                }
+            }
+
+            //[Fact]
             public void TwoUserWithDifferentRoles_PostgreSQL () {
                 var connectionString = "Server=localhost; Port=5432; Database=postgres;User Id=postgres; Password=postgres;";
                 using(var initContext = GetPostgreSQLContext(connectionString)) {
@@ -216,6 +292,46 @@ namespace GroupJoinTest
                 }
             }
 
+            //[Fact]
+            public void TwoUserWithDifferentRoles_SQLite () {
+                var sqlite = new SqliteConnection("DataSource=:memory:");
+                sqlite.Open();
+
+                using(var writeContext = GetInMemorySqliteContext(sqlite)) {
+                    writeContext.Database.EnsureCreated();
+
+                    InsertUsers(writeContext);
+                    InsertRoles(writeContext);
+
+                    writeContext.UserRoles.Add (new UserRoles () { UserId = 1, RoleId = 1 });
+                    writeContext.UserRoles.Add (new UserRoles () { UserId = 2, RoleId = 2 });
+
+                    writeContext.SaveChanges ();
+                }
+
+                using(var readContext = GetInMemorySqliteContext(sqlite)) {
+                    var result = GetRolesByUser (readContext, 1);
+
+                    // In total we expect 4 roles
+                    Assert.Equal (2, result.Count);
+
+                    foreach (var role in result) {
+                        // The navigational property must be set
+                        Assert.NotNull (role.UserRoles);
+
+                        if (role.Id == 1) {
+                            // For the role with ID 1 we should get back one UserRoles result
+                            Assert.Single (role.UserRoles);
+                        } else {
+                            // All other roles should return empty UserRoles "join" results
+                            Assert.Empty (role.UserRoles);
+                        }
+                    }
+                }
+
+                sqlite.Close();
+            }
+
             public List<Role> GetRolesByUser (DemoContext context, int UserId) {
                 var join = context.UserRoles.AsNoTracking().Where (ur => ur.UserId == UserId);
 
@@ -257,8 +373,8 @@ namespace GroupJoinTest
 
                 var options = new DbContextOptionsBuilder<DemoContext>()
                     .UseInMemoryDatabase(databaseName)
-                    .UseLoggerFactory(MyLoggerFactory)
-                    .EnableSensitiveDataLogging ()
+                    // .UseLoggerFactory(MyLoggerFactory)
+                    // .EnableSensitiveDataLogging ()
                     .Options;
 
                 return new DemoContext(options);
