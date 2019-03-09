@@ -1,96 +1,18 @@
 using System.Collections.Generic;
-using JetBrains.Annotations;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
+using System.Linq;
+using System;
+using GroupJoinTest.Models;
+using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Console;
 
-namespace GroupJoinTest {
-    namespace Models {
-        public class User {
-            public int Id { get; set; }
-            public string Name { get; set; }
-            public List<UserRoles> UserRoles { get; set; }
-        }
-
-        public class Role {
-            public int Id { get; set; }
-            public string Name { get; set; }
-            public List<UserRoles> UserRoles { get; set; }
-        }
-
-        public class UserRoles {
-            public int UserId { get; set; }
-            public User User { get; set; }
-            public int RoleId { get; set; }
-            public Role Role { get; set; }
-        }
-
-        public class DemoContext : DbContext {
-            public DemoContext (DbContextOptions<DemoContext> options) : base (options) { }
-            public DbSet<User> Users { get; set; }
-            public DbSet<Role> Roles { get; set; }
-            public DbSet<UserRoles> UserRoles { get; set; }
-
-            protected override void OnModelCreating (ModelBuilder modelBuilder) {
-                //base.OnModelCreating (modelBuilder);
-
-                // Define a composite primary key in UserRole
-                modelBuilder.Entity<UserRoles> ().HasKey (ur => new { ur.UserId, ur.RoleId });
-                // Define the 1:n relation between UserRoles and User
-                modelBuilder.Entity<UserRoles> ().HasOne (ur => ur.User).WithMany (u => u.UserRoles).HasForeignKey (ur => ur.UserId);
-                // Define the 1:n relation between UserRoles and Role
-                modelBuilder.Entity<UserRoles> ().HasOne (ur => ur.Role).WithMany (r => r.UserRoles).HasForeignKey (ur => ur.RoleId);
-            }
-
-        }
-    }
-
-    namespace Test {
-        using System.Linq;
-        using System;
-        using global::GroupJoinTest.Models;
-        using Microsoft.Data.Sqlite;
-        using Microsoft.Extensions.Logging;
-        using Microsoft.Extensions.Logging.Console;
-
+namespace GroupJoinTest
+{
+    namespace Test
+    {
         public class GroupJoinTest {
-            public static readonly LoggerFactory MyLoggerFactory
-                = new LoggerFactory(new[] {new ConsoleLoggerProvider((_, __) => true, true)});
-            public void InsertUsers(DemoContext context) {
-                var users = new List<User> {
-                    new User () { Id = 1, Name = "User 1" },
-                    new User () { Id = 2, Name = "User 2" },
-                };
-                context.Users.AddRange (users);
-            }
-
-            public void InsertRoles(DemoContext context) {
-                var roles = new List<Role> {
-                    new Role () { Id = 1, Name = "Role 1" },
-                    new Role () { Id = 2, Name = "Role 2" },
-                };
-                context.Roles.AddRange (roles);
-            }
-
-
-
-            public void AssertEmptyContext(DemoContext context) {
-                Assert.Empty(context.Users);
-                Assert.Empty(context.Roles);
-                Assert.Empty(context.UserRoles);
-            }
-
-            public void AssertEmptyUserRolesLinkTable(DemoContext context, UserRoles userRole) {
-                var beforeResult = context.UserRoles.Find(userRole.UserId, userRole.RoleId);
-                Assert.Null(beforeResult);
-            }
-
-            public void AssertHasMatchingUserRoleLink(DemoContext context, UserRoles userRole) {
-                var beforeResult = context.UserRoles.Find(userRole.UserId, userRole.RoleId);
-                Assert.NotNull(beforeResult);
-                Assert.Equal(userRole.UserId, beforeResult.UserId);
-                Assert.Equal(userRole.RoleId, beforeResult.RoleId);
-            }
-
             [Fact]
             public void UserWithoutRoles () {
                 var context = GetInMemoryContext();
@@ -146,8 +68,6 @@ namespace GroupJoinTest {
                 }
             }
 
-
-
             [Fact]
             public void UserWithAllRoles () {
                 using(var writeContext = GetInMemoryContext(nameof(UserWithAllRoles))) {
@@ -181,6 +101,7 @@ namespace GroupJoinTest {
                 sqlite.Open();
 
                 using(var writeContext = GetInMemorySqliteContext(sqlite)) {
+                    writeContext.Database.EnsureCreated();
 
                     InsertUsers(writeContext);
                     InsertRoles(writeContext);
@@ -313,17 +234,21 @@ namespace GroupJoinTest {
 
                 // Preferred way, but breaks the join-condition when EF Core decides to run two seperate queries (one for all UserRoles, one for all Roles)
                 var preferredQuery = context.Roles.GroupJoin (
-                    join,
+                    context.UserRoles,
                     outer => outer.Id,
                     inner => inner.RoleId,
                     (role, inner) => role
-                ).Include (r => r.UserRoles);
+                    ).SelectMany(
+                        collectionSelector: role => role.UserRoles.Where(ur => ur.UserId == UserId).DefaultIfEmpty(),
+                        resultSelector: (role, UserRoles) => role
+                    );
+
 
                 var preferredResult = preferredQuery.ToList ();
 
                 return preferredResult;
             }
-
+            // Helpers to create the needed contexts
             public DemoContext GetInMemoryContext(string databaseName = null) {
                 if(string.IsNullOrEmpty(databaseName)) {
                     // Pick a random databaseName if not specified
@@ -361,6 +286,44 @@ namespace GroupJoinTest {
                 var context = new DemoContext (options);
 
                 return context;
+            }
+
+            // Various Utility Functions
+            public static readonly LoggerFactory MyLoggerFactory
+                = new LoggerFactory(new[] {new ConsoleLoggerProvider((_, __) => true, true)});
+
+            public void InsertUsers(DemoContext context) {
+                var users = new List<User> {
+                    new User () { Id = 1, Name = "User 1" },
+                    new User () { Id = 2, Name = "User 2" },
+                };
+                context.Users.AddRange (users);
+            }
+
+            public void InsertRoles(DemoContext context) {
+                var roles = new List<Role> {
+                    new Role () { Id = 1, Name = "Role 1" },
+                    new Role () { Id = 2, Name = "Role 2" },
+                };
+                context.Roles.AddRange (roles);
+            }
+
+            public void AssertEmptyContext(DemoContext context) {
+                Assert.Empty(context.Users);
+                Assert.Empty(context.Roles);
+                Assert.Empty(context.UserRoles);
+            }
+
+            public void AssertEmptyUserRolesLinkTable(DemoContext context, UserRoles userRole) {
+                var beforeResult = context.UserRoles.Find(userRole.UserId, userRole.RoleId);
+                Assert.Null(beforeResult);
+            }
+
+            public void AssertHasMatchingUserRoleLink(DemoContext context, UserRoles userRole) {
+                var beforeResult = context.UserRoles.Find(userRole.UserId, userRole.RoleId);
+                Assert.NotNull(beforeResult);
+                Assert.Equal(userRole.UserId, beforeResult.UserId);
+                Assert.Equal(userRole.RoleId, beforeResult.RoleId);
             }
         }
     }
